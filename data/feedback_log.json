@@ -1,0 +1,2 @@
+{"timestamp": "2025-10-14T04:00:09.992242", "prediction_id": "pred_abc123", "feedback_data": {"prediction_id": "pred_abc123", "is_correct": true, "radiologist_notes": "Infiltrado basal derecho correctamente identificado por la IA."}}
+{"timestamp": "2025-10-14T04:00:18.904011", "prediction_id": "pred_xyz789", "feedback_data": {"prediction_id": "pred_xyz789", "is_correct": false, "radiologist_notes": "Falso positivo. Corresponde a una lesion fibrotica residual."}}

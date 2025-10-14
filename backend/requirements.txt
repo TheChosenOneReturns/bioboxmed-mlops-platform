@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+python-dotenv
+docker
+torch==2.1.0
+torchvision==0.16.0
+Pillow==10.1.0
+numpy==1.26.1
+fastapi-cors # <-- AÑADE ESTA LÍNEA

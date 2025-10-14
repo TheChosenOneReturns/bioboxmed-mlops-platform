@@ -1,0 +1,16 @@
+# Archivos de entorno - ¡NUNCA SUBIR SECRETOS!
+.env
+
+# Dependencias de Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Dependencias de Node.js (del frontend)
+biobox-dashboard/node_modules/
+biobox-dashboard/build/
+.DS_Store
+
+# Archivos de Docker
+docker-compose.override.yml
