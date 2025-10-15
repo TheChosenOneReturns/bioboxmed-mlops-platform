@@ -9,3 +9,4 @@ torchvision==0.16.0
 Pillow==10.1.0
 numpy==1.26.1
 fastapi-cors # <-- AÑADE ESTA LÍNEA
+scipy==1.11.3
