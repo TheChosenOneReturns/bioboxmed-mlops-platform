@@ -12,6 +12,7 @@ from sklearn.metrics import accuracy_score, recall_score
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
+from scipy.stats import ks_2samp
 
 # --- Lógica de Base de Datos para el Worker ---
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -54,39 +55,33 @@ def train_model(model_id, dataset_id):
     device = torch.device("cpu")
     model.to(device)
     
-    # 2. Cargar un dataset CORREGIDO desde la BD
-    print("Paso 2: Conectando a la BD para obtener feedback real...")
+    # 2. Cargar un dataset CORREGIDO desde la BD y crear baseline
+    print("Paso 2: Conectando a la BD para obtener feedback y crear baseline de distribución...")
     corrections = get_feedback_from_db()
     
     corrected_images = []
-    corrected_labels = []
-
     if corrections:
         print(f"Se encontraron {len(corrections)} correcciones en la base de datos.")
-        for feedback in corrections:
-            # En un sistema real, usarías el 'prediction_id' o una referencia a la imagen
-            # para cargar la imagen correcta. Aquí lo simulamos.
+        for _ in corrections:
             corrected_images.append(torch.from_numpy(np.random.rand(1, 3, 224, 224).astype(np.float32)))
-            # Asumimos que la corrección de "NORMAL" (0) a "NEUMONIA" (1) es el caso más común
-            corrected_labels.append(torch.tensor([1]))
     else:
-        print("No se encontraron correcciones en la base de datos. Se procederá con datos aleatorios.")
+        print("No se encontraron correcciones en la base de datos.")
 
-    # Generamos el resto del dataset de forma aleatoria
     num_random_samples = 50 - len(corrected_images)
     random_images = torch.from_numpy(np.random.rand(num_random_samples, 3, 224, 224).astype(np.float32))
     random_labels = torch.from_numpy(np.random.randint(0, 2, num_random_samples))
     
     # Combinamos los datos
-    all_images = [random_images] + corrected_images
-    all_labels = [random_labels] + corrected_labels
-    inputs = torch.cat(all_images)
-    labels = torch.cat(all_labels)
+    inputs = torch.cat([random_images] + corrected_images)
+    labels = torch.cat([random_labels] + [torch.tensor([1]) for _ in corrected_images])
     
     dataset = torch.utils.data.TensorDataset(inputs, labels)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=4)
+
+    # Guardar una "huella digital" (baseline) de los datos de entrenamiento
+    baseline_distribution = np.mean(inputs.numpy(), axis=(1, 2, 3))
     
-    # 3. Entrenamiento (igual que antes)
+    # 3. Entrenamiento
     print("Paso 3: Iniciando ciclo de fine-tuning (5 epochs)...")
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.fc.parameters(), lr=0.001, momentum=0.9)
@@ -103,8 +98,22 @@ def train_model(model_id, dataset_id):
             running_loss += loss.item()
         print(f"  Epoch [{epoch+1}/{num_epochs}], Pérdida: {running_loss/len(dataloader):.4f}")
     
-    # 4. Simular evaluación y guardado (igual que antes)
-    print("Paso 4: Evaluando, calculando y guardando artefactos...")
+    # 4. Detección de Drift, Evaluación y Guardado de Artefactos
+    print("Paso 4: Evaluando, detectando drift y guardando artefactos...")
+    
+    # Simular nuevos datos de producción y detectar drift
+    print("   [Drift Check] Simulando la llegada de nuevos datos de producción...")
+    new_data = np.random.rand(100, 3, 224, 224) + 0.1 # Datos estadísticamente diferentes
+    new_distribution = np.mean(new_data, axis=(1, 2, 3))
+    
+    # Test de Kolmogorov-Smirnov
+    ks_statistic, p_value = ks_2samp(baseline_distribution, new_distribution)
+    if p_value < 0.05:
+        print(f"   [ALERTA 🔴] Data Drift Detectado! (p-value: {p_value:.4f}). Los nuevos datos son diferentes a los de entrenamiento.")
+    else:
+        print(f"   [OK ✅] No se detectó Data Drift (p-value: {p_value:.4f}).")
+
+    # Simular métricas de rendimiento
     y_true, y_pred = np.random.randint(0, 2, 20), np.random.randint(0, 2, 20)
     accuracy = accuracy_score(y_true, y_pred) + np.random.uniform(0.05, 0.1)
     metrics = {
@@ -112,12 +121,15 @@ def train_model(model_id, dataset_id):
         "sensitivity": min(round(recall_score(y_true, y_pred, pos_label=1) + np.random.uniform(0.05, 0.1), 4), 1.0),
         "specificity": min(round(recall_score(y_true, y_pred, pos_label=0) + np.random.uniform(0.05, 0.1), 4), 1.0)
     }
+    
+    # Guardado de artefactos
     output_dir = f"/app/data/models/{model_id}"
     os.makedirs(output_dir, exist_ok=True)
     model_path = os.path.join(output_dir, "model.pth")
     torch.save(model.state_dict(), model_path)
     with open(os.path.join(output_dir, "metrics.json"), "w") as f:
         json.dump(metrics, f)
+    np.save(os.path.join(output_dir, "baseline_distribution.npy"), baseline_distribution)
     
     # 5. Reportar a la API
     print("Paso 5: Reportando finalización a la API...")
